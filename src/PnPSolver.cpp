@@ -90,21 +90,22 @@ double PnPSolver::getDistance() const
 
 void PnPSolver::drawAxis(cv::Mat& image, float axisLength)
 {
-    // 定义坐标轴的3D点
+    // 定义坐标轴的3D点 - 从原点出发，沿着三个互相垂直的方向
     std::vector<cv::Point3f> axisPoints;
     axisPoints.push_back(cv::Point3f(0, 0, 0));           // 原点
-    axisPoints.push_back(cv::Point3f(axisLength, 0, 0)); // X轴
-    axisPoints.push_back(cv::Point3f(0, axisLength, 0)); // Y轴
-    axisPoints.push_back(cv::Point3f(0, 0, axisLength)); // Z轴
+    axisPoints.push_back(cv::Point3f(axisLength, 0, 0)); // X轴 - 沿X方向
+    axisPoints.push_back(cv::Point3f(0, axisLength, 0)); // Y轴 - 沿Y方向
+    axisPoints.push_back(cv::Point3f(0, 0, axisLength)); // Z轴 - 沿Z方向
     
     // 投影到图像平面
     std::vector<cv::Point2f> imageAxisPoints;
     cv::projectPoints(axisPoints, _rvec, _tvec, _cameraMatrix, _distCoeffs, imageAxisPoints);
     
-    // 绘制坐标轴
-    cv::line(image, imageAxisPoints[0], imageAxisPoints[1], cv::Scalar(0, 0, 255), 3); // X轴 - 红色
-    cv::line(image, imageAxisPoints[0], imageAxisPoints[2], cv::Scalar(0, 255, 0), 3); // Y轴 - 绿色
-    cv::line(image, imageAxisPoints[0], imageAxisPoints[3], cv::Scalar(255, 0, 0), 3); // Z轴 - 蓝色
+    // 绘制坐标轴 - 使用箭头表示方向，清晰显示三个向量互相垂直
+    const double arrowTipLength = 0.3;  // 箭头尖端长度比例
+    cv::arrowedLine(image, imageAxisPoints[0], imageAxisPoints[1], cv::Scalar(0, 0, 255), 3, cv::LINE_AA, 0, arrowTipLength); // X轴 - 红色
+    cv::arrowedLine(image, imageAxisPoints[0], imageAxisPoints[2], cv::Scalar(0, 255, 0), 3, cv::LINE_AA, 0, arrowTipLength); // Y轴 - 绿色
+    cv::arrowedLine(image, imageAxisPoints[0], imageAxisPoints[3], cv::Scalar(255, 0, 0), 3, cv::LINE_AA, 0, arrowTipLength); // Z轴 - 蓝色
     
     // 添加标签
     cv::putText(image, "X", imageAxisPoints[1], cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 255), 2);
