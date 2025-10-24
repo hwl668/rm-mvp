@@ -1,3 +1,0 @@
-/home/runner/work/rm-mvp/rm-mvp/build/CMakeFiles/armor_detection.dir
-/home/runner/work/rm-mvp/rm-mvp/build/CMakeFiles/edit_cache.dir
-/home/runner/work/rm-mvp/rm-mvp/build/CMakeFiles/rebuild_cache.dir

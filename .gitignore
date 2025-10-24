@@ -1,0 +1,22 @@
+# Build directories
+build/
+*.o
+*.a
+
+# Executables
+armor_detection
+test_image
+
+# Output images
+detection_result.jpg
+final_result.jpg
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
