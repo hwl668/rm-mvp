@@ -1,3 +1,0 @@
-/home/backlight/workspace/ArmorDetection/build/CMakeFiles/rebuild_cache.dir
-/home/backlight/workspace/ArmorDetection/build/CMakeFiles/edit_cache.dir
-/home/backlight/workspace/ArmorDetection/build/CMakeFiles/armor_detection.dir
