@@ -23,14 +23,25 @@ int main(int argc, char** argv)
     cout << "Image size: " << srcImg.cols << "x" << srcImg.rows << endl;
     
     // 裁剪图像边缘以移除亮边框（如果存在）
+    // 使用固定的50像素边框，这对于大多数测试图像已经足够
+    // 可以通过命令行参数或配置文件自定义此值
     int borderSize = 50;
-    Rect roi(borderSize, borderSize, 
-             srcImg.cols - 2 * borderSize, 
-             srcImg.rows - 2 * borderSize);
-    Mat processImg = srcImg(roi).clone();
     
-    cout << "Processing image (cropped " << borderSize << "px border)" << endl;
-    cout << "Processing size: " << processImg.cols << "x" << processImg.rows << endl;
+    Mat processImg;
+    if(srcImg.cols > 2 * borderSize && srcImg.rows > 2 * borderSize)
+    {
+        Rect roi(borderSize, borderSize, 
+                 srcImg.cols - 2 * borderSize, 
+                 srcImg.rows - 2 * borderSize);
+        processImg = srcImg(roi).clone();
+        cout << "Processing image (cropped " << borderSize << "px border)" << endl;
+        cout << "Processing size: " << processImg.cols << "x" << processImg.rows << endl;
+    }
+    else
+    {
+        processImg = srcImg.clone();
+        cout << "Image too small for border cropping, using original image" << endl;
+    }
     
     // 配置装甲板检测参数
     ArmorParam param;
@@ -71,6 +82,8 @@ int main(int argc, char** argv)
         Mat detectImg = detector.getDebugImg();
         
         // 相机内参和畸变系数（根据实际相机标定结果）
+        // 这些参数应该通过相机标定获得
+        // TODO: 考虑从配置文件读取这些参数
         cv::Mat cameraMatrix = (cv::Mat_<double>(3, 3) << 
             9.28130989e+02, 0, 3.77572945e+02,
             0, 9.30138391e+02, 2.83892859e+02,
