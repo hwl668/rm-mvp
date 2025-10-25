@@ -29,14 +29,7 @@ void DrawPoseAxes(cv::Mat& img,
   };
   std::vector<cv::Point2f> axis2d;
   cv::projectPoints(axis3d, pose.rvec, pose.tvec, K, dist, axis2d);
-  if (axis2d.size() != 4) {
-    std::cout << "[DEBUG] DrawPoseAxes: projectPoints failed!\n";
-    return;
-  }
-  
-  std::cout << "[DEBUG] DrawPoseAxes: drawing axes at origin=" << axis2d[0] 
-            << " X=" << axis2d[1] << " Y=" << axis2d[2] << " Z=" << axis2d[3] << "\n";
-  std::cout << "[DEBUG] Image size: " << img.cols << "x" << img.rows << "\n";
+  if (axis2d.size() != 4) return;
 
   cv::line(img, axis2d[0], axis2d[1], {0, 0, 255}, 2, cv::LINE_AA);
   cv::line(img, axis2d[0], axis2d[2], {0, 255, 0}, 2, cv::LINE_AA);
@@ -58,8 +51,6 @@ int main(int argc, char** argv) try {
   const double armor_height = P["armor"]["height"].as<double>(0.050);
   const double axis_len     = P["pnp"]["axis_len_m"].as<double>(0.08);
   const double reproj_thr   = P["pnp"]["reproj_thresh_px"].as<double>(3.0);
-  
-  std::cout << "[DEBUG] Loaded params: axis_len=" << axis_len << " reproj_thr=" << reproj_thr << "\n";
 
   VideoReader vr;
   if (!vr.open(source)) {
@@ -141,16 +132,6 @@ int main(int argc, char** argv) try {
     EnrichLightBarsWithEndpoints(bars);
 
     auto pairs = PairLights(bars, P);
-    // Debug: show info about all detected bars
-    if (bars.size() >= 4) {
-      std::cout << "[DEBUG] Frame - bars=" << bars.size() << " pairs=" << pairs.size();
-      for (size_t i = 0; i < bars.size(); i++) {
-        std::cout << " | Bar" << i << ": area=" << bars[i].area 
-                  << " ratio=" << bars[i].ratio 
-                  << " center=(" << bars[i].center.x << "," << bars[i].center.y << ")";
-      }
-      std::cout << "\n";
-    }
     if (pairs.empty() && bars.size() >= 2) {
       std::vector<int> idx(bars.size());
       std::iota(idx.begin(), idx.end(), 0);
@@ -172,17 +153,11 @@ int main(int argc, char** argv) try {
       const LBBox& L = bars[pairs[0].li];
       const LBBox& R = bars[pairs[0].ri];
       bool corners_ok = EstimatePlateCorners(L, R, P, corners);
-      std::cout << "[DEBUG] EstimatePlateCorners returned: " << corners_ok << "\n";
       if (corners_ok) {
         pose = SolveArmorPnP(corners, cam.K, cam.dist,
                              armor_width, armor_height, reproj_thr);
         pose_ok = pose.ok;
-        std::cout << "[DEBUG] Frame pose - ok=" << pose.ok 
-                  << " reproj_err=" << pose.reproj_err 
-                  << " inliers=" << pose.inliers 
-                  << " thresh=" << reproj_thr << "\n";
         if (pose_ok) {
-          std::cout << "[DEBUG] DRAWING AXES AND ARMOR PLATE\n";
           DrawPoseAxes(show, cam.K, cam.dist, pose, axis_len);
           auto toPoint = [](const cv::Point2f& p) {
             return cv::Point(cvRound(p.x), cvRound(p.y));
@@ -208,9 +183,8 @@ int main(int argc, char** argv) try {
     // Save and exit after processing the last frame
     if (ended && !should_exit) {
       should_exit = true;
-      std::cout << "[step4] Saving last frame...\n";
       cv::imwrite("/tmp/step4_output.jpg", last_processed_frame);
-      std::cout << "[step4] Saved to /tmp/step4_output.jpg.\n";
+      std::cout << "[step4] Video ended. Saved last frame to /tmp/step4_output.jpg\n";
       cv::waitKey(1000);
       break;
     }
