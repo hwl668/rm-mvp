@@ -1,0 +1,71 @@
+# color 参数说明（OpenCV HSV 标度：H∈[0,180]，S/V∈[0,255]）：
+  # - hsv_red1: [Hmin, Smin, Vmin, Hmax, Smax, Vmax] 红色范围1（靠近 0°）
+  # - hsv_red2: [Hmin, Smin, Vmin, Hmax, Smax, Vmax] 红色范围2（靠近 180°，红色跨 Hue 环需两段）
+  # - hsv_blue: [Hmin, Smin, Vmin, Hmax, Smax, Vmax] 蓝色范围
+  # - morph_kernel: 形态学核大小（像素，方形核边长，用于开/闭运算去噪与连通）
+color:
+  # HSV范围更宽一些（H 0–180；S/V 0–255）
+  hsv_red1:  [0,   50,  50,  12, 255, 255]
+  hsv_red2:  [168, 50,  50, 180, 255, 255]
+  hsv_blue:  [95,  40,  40, 135, 255, 255]
+  morph_kernel: 1     # 先用很小的核，避免把细灯条洗
+
+gray:
+  use_otsu: false
+  thresh: 150
+  morph_k: 3
+
+lightbar:
+  min_area: 5         # 降低最小面积（小目标也保留）
+  min_ratio: 1.5      # 允许更矮胖（避免被裁掉）
+  max_ratio: 12.0     # 过细的也放行
+  angle_upright_deg: 35.0  # 角度放宽
+
+pair:
+  max_tilt_diff_deg: 12
+  height_ratio_tol: 0.3
+  length_ratio_tol: 0.4
+  center_slope_absmax: 0.25
+  dist_over_len_min: 0.6
+  dist_over_len_max: 3.0
+
+plate:
+  
+  top_bottom_scale: 1.05
+  axis_len_m: 0.06
+
+pnp:
+  solver: "ippe_square"           # 平面矩形优先 IPPE_SQUARE；不稳时可切 ransac
+  ransac_iters: 100
+  ransac_thresh_px: 3.0
+  ransac_conf: 0.99
+  armor: { width_m: 0.130, height_m: 0.050 }  # 130×50 mm → 0.130×0.050 m
+  use_undistorted_points: false   # 如果你先 undistort，再把它改为 true 并把 dist 置零
+
+pair:
+  height_diff_max: 0.30       # 高度相对差 <= 0.30
+  length_diff_max: 0.30       # 长度相对差（等同高度）<= 0.30
+  tilt_diff_max_deg: 15.0     # 倾角差（度）
+  slope_max: 0.30             # 中心连线斜率阈值
+  gap_min_ratio: 0.6          # 中心距 / 平均高度 的最小值
+  gap_max_ratio: 3.0          # …最大值
+
+  # 打分权重（总和不必为1）
+  w_height: 0.25
+  w_length: 0.20
+  w_tilt:   0.20
+  w_slope:  0.15
+  w_gap:    0.20
+
+display:
+  scale: 1.5
+armor:
+  width: 0.130     # 装甲板实际宽度(米) = 130 mm
+  height: 0.050    # 装甲板实际高度(米) = 50 mm
+
+pnp:
+  reproj_thresh_px: 3.0   # 重投影误差阈值(像素)
+  axis_len_m: 0.08        # 画坐标轴长度(米)
+plate:
+  top_offset_ratio: 0.08     # ↑↓边界相对灯条高度的偏移比例（按你的数据微调）
+  bottom_offset_ratio: 0.06

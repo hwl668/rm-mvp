@@ -1,143 +1,224 @@
-#include <iostream>
+#include "armor/io.hpp"
+#include "armor/color_selector.hpp"
+#include "armor/lightbar_detector.hpp"
+#include "armor/pairing.hpp"
+#include "armor/plate_corners.hpp"  // 需提供接口：见下方注释
+#include "armor/pnp_solver.hpp"     // 需提供接口：见下方注释
+#include "armor/visualizer.hpp"
+
+#include <yaml-cpp/yaml.h>
 #include <opencv2/opencv.hpp>
-#include "ArmorDetector.h"
-#include "PnPSolver.h"
+#include <iostream>
+#include <array>
+#include <algorithm>
+#include <numeric>
 
-using namespace std;
-using namespace cv;
-using namespace rm;
+using namespace armor;
 
-int main(int argc, char** argv)
+
+static void DrawAxes(cv::Mat& img, const cv::Mat& K, const cv::Mat& dist,
+         const cv::Vec3d& rvec, const cv::Vec3d& tvec, double axis_len_m)
 {
-    cout << "=== Armor Detection with PnP ===" << endl;
-    
-    string imagePath = (argc > 1) ? argv[1] : "test.jpg";
-    Mat srcImg = imread(imagePath);
-    
-    if(srcImg.empty())
-    {
-        cerr << "Error: Cannot load image: " << imagePath << endl;
-        return -1;
-    }
-    
-    cout << "Image size: " << srcImg.cols << "x" << srcImg.rows << endl;
-    
-    // 裁剪图像边缘以移除亮边框（如果存在）
-    int borderSize = 50;
-    Rect roi(borderSize, borderSize, 
-             srcImg.cols - 2 * borderSize, 
-             srcImg.rows - 2 * borderSize);
-    Mat processImg = srcImg(roi).clone();
-    
-    cout << "Processing image (cropped " << borderSize << "px border)" << endl;
-    cout << "Processing size: " << processImg.cols << "x" << processImg.rows << endl;
-    
-    // 配置装甲板检测参数
-    ArmorParam param;
-    param.enemy_color = BLUE;  // 蓝色装甲板，红色则设为 RED
-    param.brightness_threshold = 200;  // 亮度阈值
-    
-    // 优化后的参数
-    param.light_min_area = 500.0f;  // 最小灯条面积
-    param.light_max_ratio = 1.0f;  // 灯条宽高比
-    param.light_contour_min_solidity = 0.5f;  // 灯条凸度
-    param.light_max_angle_diff_ = 12.0f;  // 灯条角度差
-    param.light_max_height_diff_ratio_ = 0.30f;  // 灯条高度差比例
-    param.light_max_y_diff_ratio_ = 0.30f;  // 灯条Y坐标差比例
-    param.light_min_x_diff_ratio_ = 0.5f;  // 灯条X坐标差比例
-    param.armor_min_aspect_ratio_ = 1.8f;  // 装甲板最小宽高比
-    param.armor_max_aspect_ratio_ = 3.4f;  // 装甲板最大宽高比
-    
-    // 检测装甲板
-    ArmorDetector detector(param);
-    detector.loadImg(processImg);
-    int result = detector.detect();
-    
-    if(result == ArmorDetector::ARMOR_LOCAL)
-    {
-        cout << "\n✓ Armor detected successfully!" << endl;
-        
-        vector<Point2f> armorVertex = detector.getArmorVertex();
-        int armorType = detector.getArmorType();
-        
-        cout << "Armor type: " << (armorType == SMALL_ARMOR ? "Small" : "Big") << endl;
-        cout << "Armor vertices:" << endl;
-        for(size_t i = 0; i < armorVertex.size(); i++)
-        {
-            cout << "  P" << i << ": (" << (int)armorVertex[i].x 
-                 << ", " << (int)armorVertex[i].y << ")" << endl;
+  std::vector<cv::Point3f> axis3d = {
+      {0,0,0}, { (float)axis_len_m,0,0 }, {0,(float)axis_len_m,0}, {0,0,(float)axis_len_m} };
+  std::vector<cv::Point2f> axis2d;
+  cv::projectPoints(axis3d, rvec, tvec, K, dist, axis2d);
+  auto O=axis2d[0], X=axis2d[1], Y=axis2d[2], Z=axis2d[3];
+  cv::line(img, O, X, {0,0,255}, 2, cv::LINE_AA);   // X 红
+  cv::line(img, O, Y, {0,255,0}, 2, cv::LINE_AA);   // Y 绿
+  cv::line(img, O, Z, {255,0,0}, 2, cv::LINE_AA);   // Z 蓝
+}
+
+static void BannerParams(const YAML::Node& P) {
+  auto pr=[&](const char* k, const YAML::Node& n){
+    if(n[k]) std::cout<<"  "<<k<<" = "<<n[k]<<"\n";
+  };
+  std::cout << "\n==== ARMOR VISION (build " << __DATE__ << " " << __TIME__ << ") ====\n";
+  std::cout << "[armor.size(m)]\n";
+  pr("width", P["armor"]); pr("height", P["armor"]);
+  std::cout << "[pnp]\n";
+  pr("reproj_thresh_px", P["pnp"]); pr("axis_len_m", P["pnp"]);
+  std::cout << "====================================================\n";
+}
+
+int main(int argc, char** argv) try {
+  // 1) 输入源与配置
+  std::string source = (argc>1)? argv[1] : "data/videos/arm.avi";
+  Camera cam = LoadCamera("config/camera.yaml");
+  YAML::Node P = YAML::LoadFile("config/params.yaml");
+  BannerParams(P);
+
+  const double Wm = P["armor"]["width"].as<double>(0.130);   // 你的尺寸：宽 0.130 m
+  const double Hm = P["armor"]["height"].as<double>(0.050);  // 高 0.050 m
+  const double AX = P["pnp"]["axis_len_m"].as<double>(0.08); // 坐标轴长度
+  const double RE = P["pnp"]["reproj_thresh_px"].as<double>(3.0);
+
+  // 2) 打开视频/相机
+  VideoReader vr;
+  if(!vr.open(source)){ std::cerr<<"[main] open failed: "<<source<<"\n"; return 2; }
+  cv::Mat frame;
+  if(!vr.read(frame)||frame.empty()){ std::cerr<<"[main] first frame fail.\n"; return 3; }
+  cv::Size sz = vr.size();
+  AdaptIntrinsicsToFrame(cam, sz.width, sz.height);
+
+  bool paused=false;
+  double fps_meas=0.0, t_prev=cv::getTickCount();
+
+  for(;;){
+    if(!paused){
+      if(!vr.read(frame) || frame.empty()){
+        if(!vr.isCamera()){
+          if(!vr.reset()){
+            std::cerr << "[main] Failed to rewind video source.\n";
+            break;
+          }
+          if(!vr.read(frame) || frame.empty()){
+            std::cerr << "[main] Failed to loop video source after reset.\n";
+            break;
+          }
+          std::cout << "[main] Looping video from start.\n";
+        } else {
+          std::cerr << "[main] Camera frame grab failed.\n";
+          break;
         }
-        
-        Mat detectImg = detector.getDebugImg();
-        
-        // 相机内参和畸变系数（根据实际相机标定结果）
-        cv::Mat cameraMatrix = (cv::Mat_<double>(3, 3) << 
-            9.28130989e+02, 0, 3.77572945e+02,
-            0, 9.30138391e+02, 2.83892859e+02,
-            0, 0, 1.0);
-        
-        cv::Mat distCoeffs = (cv::Mat_<double>(5, 1) << 
-            -2.54433647e-01, 5.69431382e-01, 3.65405229e-03, 
-            -1.09433818e-03, -1.33846840e+00);
-        
-        // 使用PnP求解器计算3D位姿
-        PnPSolver pnpSolver(cameraMatrix, distCoeffs);
-        
-        if(pnpSolver.solve(armorVertex, armorType))
-        {
-            cout << "\n✓ PnP solved successfully!" << endl;
-            
-            Vec3d pos = pnpSolver.getPosition();
-            Vec3d rot = pnpSolver.getRotation();
-            double dist = pnpSolver.getDistance();
-            
-            cout << "\n=== 3D Position (Camera Coordinate System) ===" << endl;
-            cout << "X: " << pos[0] << " m" << endl;
-            cout << "Y: " << pos[1] << " m" << endl;
-            cout << "Z: " << pos[2] << " m" << endl;
-            cout << "Distance: " << dist << " m" << endl;
-            
-            cout << "\n=== 3D Rotation (Rodrigues Vector) ===" << endl;
-            cout << "RX: " << rot[0] << " rad" << endl;
-            cout << "RY: " << rot[1] << " rad" << endl;
-            cout << "RZ: " << rot[2] << " rad" << endl;
-            
-            // 在图像上绘制坐标轴和结果
-            Mat resultImg = detectImg.clone();
-            pnpSolver.drawAxis(resultImg, 0.1f);  // 绘制坐标轴
-            pnpSolver.drawResult(resultImg);  // 绘制位置信息
-            
-            // 保存和显示结果
-            imwrite("detection_result.jpg", detectImg);
-            imwrite("final_result.jpg", resultImg);
-            
-            cout << "\n✓ Results saved:" << endl;
-            cout << "  - detection_result.jpg" << endl;
-            cout << "  - final_result.jpg" << endl;
-            
-            namedWindow("Detection Result", WINDOW_NORMAL);
-            imshow("Detection Result", detectImg);
-            
-            namedWindow("Final Result with PnP", WINDOW_NORMAL);
-            imshow("Final Result with PnP", resultImg);
-            
-            cout << "\nPress any key to exit..." << endl;
-            waitKey(0);
-            return 0;
-        }
-        else
-        {
-            cerr << "\n✗ PnP solve failed!" << endl;
-            return -1;
-        }
+      }
     }
-    else
-    {
-        cerr << "\n✗ Armor detection failed!" << endl;
-        cerr << "Tips:" << endl;
-        cerr << "  - Check if the image contains armor plates" << endl;
-        cerr << "  - Adjust brightness_threshold parameter" << endl;
-        cerr << "  - Verify enemy_color setting (BLUE or RED)" << endl;
-        return -1;
+
+    // ============ 颜色自动判定（HSV） ============
+    ColorResult cr = SelectColor(frame, P);
+
+    // 颜色掩膜 + 灰度约束
+    const YAML::Node gray_cfg = P["gray"];
+    int gray_thresh = gray_cfg ? gray_cfg["thresh"].as<int>(150) : 150;
+    bool gray_use_otsu = gray_cfg ? gray_cfg["use_otsu"].as<bool>(false) : false;
+    int gray_morph = gray_cfg ? gray_cfg["morph_k"].as<int>(3) : 3;
+    cv::Mat bin_gray;
+    BuildGrayBinary(frame, gray_thresh, gray_use_otsu, gray_morph, bin_gray);
+
+    cv::Mat bin = bin_gray;
+    if(cr.color != TeamColor::UNKNOWN){
+      cv::bitwise_and(bin_gray, cr.mask, bin);
+      if(cv::countNonZero(bin) < 10)
+        bin = cr.mask.clone();
     }
+
+    int post_k = P["lightbar"]["post_morph"].as<int>(3);
+    if(post_k > 1){
+      int kk = std::max(1, post_k | 1);
+      cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, {kk, kk});
+      cv::morphologyEx(bin, bin, cv::MORPH_CLOSE, kernel);
+      cv::morphologyEx(bin, bin, cv::MORPH_OPEN,  kernel);
+    }
+
+    // ============ 候选灯条 + 端点 ============
+    auto bars = ExtractLightBarCandidates(bin, P);
+    if(bars.empty()){
+      YAML::Node P_relaxed = YAML::Clone(P);
+      YAML::Node light = P_relaxed["lightbar"];
+      double min_area  = light["min_area"].as<double>(20.0) * 0.5;
+      double min_ratio = light["min_ratio"].as<double>(3.0) * 0.6;
+      double max_ratio = light["max_ratio"].as<double>(25.0) * 1.5;
+      double ang_upr   = light["angle_upright_deg"].as<double>(25.0) + 20.0;
+      light["min_area"] = std::max(4.0, min_area);
+      light["min_ratio"] = std::max(1.2, min_ratio);
+      light["max_ratio"] = std::max(10.0, max_ratio);
+      light["angle_upright_deg"] = std::min(75.0, ang_upr);
+      bars = ExtractLightBarCandidates(bin, P_relaxed);
+    }
+    EnrichLightBarsWithEndpoints(bars);
+
+    // ============ 配对 ============
+    auto pairs = PairLights(bars, P);
+    if(pairs.empty() && bars.size() >= 2){
+      std::vector<int> idx(bars.size());
+      std::iota(idx.begin(), idx.end(), 0);
+      std::sort(idx.begin(), idx.end(), [&](int a, int b){ return bars[a].area > bars[b].area; });
+      int li = idx[0], ri = idx[1];
+      if(bars[li].center.x > bars[ri].center.x) std::swap(li, ri);
+      PairLB fallback; fallback.li = li; fallback.ri = ri; fallback.score = 0.0;
+      pairs.push_back(fallback);
+    }
+
+    // ============ 可视化底图 ============
+    cv::Mat show = frame.clone();
+    for(const auto& b: bars) DrawLightBar(show, b);
+    if(!pairs.empty()) DrawBestPair(show, bars, pairs[0]);
+
+    // ============ 若有最佳配对：角点外推 + PnP ============
+    bool have_pose=false; Pose pose; std::array<cv::Point2f,4> cimg;
+    if(!pairs.empty()){
+      const LBBox& L = bars[pairs[0].li];
+      const LBBox& R = bars[pairs[0].ri];
+
+      if(EstimatePlateCorners(L, R, P, cimg)){
+        auto toPoint = [](const cv::Point2f& p){ return cv::Point(cvRound(p.x), cvRound(p.y)); };
+        std::vector<cv::Point> outline;
+        outline.reserve(4);
+        for(const auto& pt : cimg) outline.push_back(toPoint(pt));
+        cv::polylines(show, std::vector<std::vector<cv::Point>>{outline}, true, {0,255,0}, 2, cv::LINE_AA);
+        for(int i=0;i<4;i++){
+          cv::Point pi = toPoint(cimg[i]);
+          cv::circle(show, pi, 5, {0,255,0}, -1, cv::LINE_AA);
+          cv::putText(show, std::to_string(i), pi + cv::Point(3,-3), cv::FONT_HERSHEY_SIMPLEX, 0.5, {0,255,0}, 1, cv::LINE_AA);
+        }
+
+        // PnP
+        pose = SolveArmorPnP(cimg, cam.K, cam.dist, Wm, Hm, RE);
+        have_pose = pose.ok && pose.reproj_err <= RE;
+
+        if(have_pose){
+          DrawAxes(show, cam.K, cam.dist, pose.rvec, pose.tvec, AX);
+
+          // 打印位姿
+          char buf[256];
+          double X=pose.tvec[0], Y=pose.tvec[1], Z=pose.tvec[2];
+          std::snprintf(buf, sizeof(buf),
+              "PnP OK | X=%.3f Y=%.3f Z=%.3f m  | Err=%.2f px  Inl=%d",
+              X, Y, Z, pose.reproj_err, pose.inliers);
+          PutTextShadow(show, buf, {20, 120}, 0.8, {0,255,0});
+        } else {
+          char buf[128];
+          std::snprintf(buf, sizeof(buf), "PnP FAIL | Err=%.2f px  Inl=%d", pose.reproj_err, pose.inliers);
+          PutTextShadow(show, buf, {20, 120}, 0.8, {0,200,255});
+        }
+      }
+    }
+
+    // ============ 统计/FPS/提示 ============
+    double t_now=cv::getTickCount();
+    double dt=(t_now-t_prev)/cv::getTickFrequency(); t_prev=t_now;
+    double fps_inst = (dt>1e-6)? 1.0/dt : 0.0; fps_meas = (fps_meas<=0)? fps_inst : 0.9*fps_meas+0.1*fps_inst;
+
+    char line1[256], line2[256];
+    std::snprintf(line1, sizeof(line1),
+      "BUILD %s %s | color=%s | bars=%zu pairs=%zu | fps cap=%.1f meas=%.1f",
+      __DATE__, __TIME__,
+      (cr.color==TeamColor::RED?"RED":(cr.color==TeamColor::BLUE?"BLUE":"UNK")),
+      bars.size(), pairs.size(), vr.fps(), fps_meas);
+    PutTextShadow(show, line1, {20,40}, 0.8);
+
+    std::snprintf(line2, sizeof(line2),
+      "Keys: ESC quit | P pause | R reload params | S save debug");
+    PutTextShadow(show, line2, {20,80}, 0.7);
+
+    cv::imshow("armor_vision", show);
+    int k=cv::waitKey(1);
+    if(k==27) break;
+    else if(k=='p'||k=='P') paused = !paused;
+    else if(k=='r'||k=='R'){
+      try{ P = YAML::LoadFile("config/params.yaml"); BannerParams(P); }
+      catch(...){ std::cerr<<"[main] reload params failed.\n"; }
+    }
+    else if(k=='s'||k=='S'){
+      static int idx=0;
+      cv::imwrite(cv::format("dbg_mask_%03d.png", idx), cr.mask);
+      cv::imwrite(cv::format("dbg_frame_%03d.png", idx), frame);
+      idx++; std::cout<<"[main] saved debug images.\n";
+    }
+  }
+
+  return 0;
+}
+catch(const std::exception& e){
+  std::cerr << "[main] Exception: " << e.what() << "\n"; return 1;
 }
