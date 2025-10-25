@@ -1,47 +1,26 @@
-# color 参数说明（OpenCV HSV 标度：H∈[0,180]，S/V∈[0,255]）：
-  # - hsv_red1: [Hmin, Smin, Vmin, Hmax, Smax, Vmax] 红色范围1（靠近 0°）
-  # - hsv_red2: [Hmin, Smin, Vmin, Hmax, Smax, Vmax] 红色范围2（靠近 180°，红色跨 Hue 环需两段）
-  # - hsv_blue: [Hmin, Smin, Vmin, Hmax, Smax, Vmax] 蓝色范围
-  # - morph_kernel: 形态学核大小（像素，方形核边长，用于开/闭运算去噪与连通）
+# color 参数说明（OpenCV HSV 标度：H∈[0,180]，S/V∈[0,255]）
+# - hsv_red1: [Hmin, Smin, Vmin, Hmax, Smax, Vmax] 红色范围1（靠近 0°）
+# - hsv_red2: [Hmin, Smin, Vmin, Hmax, Smax, Vmax] 红色范围2（靠近 180°，红色跨 Hue 环需两段）
+# - hsv_blue: [Hmin, Smin, Vmin, Hmax, Smax, Vmax] 蓝色范围
+# - morph_kernel: 形态学核大小（像素，方形核边长，用于开/闭运算去噪与连通）
 color:
-  # HSV范围更宽一些（H 0–180；S/V 0–255）
-  hsv_red1:  [0,   50,  50,  12, 255, 255]
-  hsv_red2:  [168, 50,  50, 180, 255, 255]
-  hsv_blue:  [95,  40,  40, 135, 255, 255]
-  morph_kernel: 1     # 先用很小的核，避免把细灯条洗
+  # HSV范围 - 平衡准确度和召回率
+  hsv_red1:  [0,   60,  60,  10, 255, 255]  # 适中的饱和度阈值
+  hsv_red2:  [170, 60,  60, 180, 255, 255]  # 适中的饱和度阈值
+  hsv_blue:  [100, 50,  50, 130, 255, 255]  # 适中的蓝色范围
+  morph_kernel: 2     # 形态学核大小
 
 gray:
   use_otsu: false
-  thresh: 150
-  morph_k: 3
+  thresh: 180         # 提高阈值以减少背景噪声
+  morph_k: 2          # 减小形态学核，保留细节
 
 lightbar:
-  min_area: 10        # 最小面积阈值（过滤噪声）
-  min_ratio: 3.0      # 长宽比阈值（灯条应该细长）
-  max_ratio: 12.0     # 最大长宽比
-  angle_upright_deg: 35.0  # 与竖直方向的最大角度
+  min_area: 12        # 适中的最小面积阈值
+  min_ratio: 2.0      # 放宽长宽比阈值（装甲板灯条有时较短）
+  max_ratio: 10.0     # 最大长宽比
+  angle_upright_deg: 30.0  # 角度容差
   post_morph: 3       # 后处理形态学核大小
-
-pair:
-  max_tilt_diff_deg: 12
-  height_ratio_tol: 0.3
-  length_ratio_tol: 0.4
-  center_slope_absmax: 0.25
-  dist_over_len_min: 0.6
-  dist_over_len_max: 3.0
-
-plate:
-  
-  top_bottom_scale: 1.05
-  axis_len_m: 0.06
-
-pnp:
-  solver: "ippe_square"           # 平面矩形优先 IPPE_SQUARE；不稳时可切 ransac
-  ransac_iters: 100
-  ransac_thresh_px: 3.0
-  ransac_conf: 0.99
-  armor: { width_m: 0.130, height_m: 0.050 }  # 130×50 mm → 0.130×0.050 m
-  use_undistorted_points: false   # 如果你先 undistort，再把它改为 true 并把 dist 置零
 
 pair:
   height_diff_max: 0.30       # 高度相对差 <= 0.30
@@ -50,7 +29,6 @@ pair:
   slope_max: 0.30             # 中心连线斜率阈值
   gap_min_ratio: 0.6          # 中心距 / 平均高度 的最小值
   gap_max_ratio: 3.0          # …最大值
-
   # 打分权重（总和不必为1）
   w_height: 0.25
   w_length: 0.20
@@ -58,15 +36,23 @@ pair:
   w_slope:  0.15
   w_gap:    0.20
 
-display:
-  scale: 1.5
+plate:
+  top_offset_ratio: 0.08     # ↑↓边界相对灯条高度的偏移比例（按你的数据微调）
+  bottom_offset_ratio: 0.06
+
 armor:
   width: 0.130     # 装甲板实际宽度(米) = 130 mm
   height: 0.050    # 装甲板实际高度(米) = 50 mm
 
 pnp:
+  solver: "ippe_square"           # 平面矩形优先 IPPE_SQUARE；不稳时可切 ransac
+  ransac_iters: 100
+  ransac_thresh_px: 3.0
+  ransac_conf: 0.99
+  use_undistorted_points: false   # 如果你先 undistort，再把它改为 true 并把 dist 置零
   reproj_thresh_px: 4.0   # 重投影误差阈值(像素) - 放宽以适应边缘帧
-  axis_len_m: 0.08        # 画坐标轴长度(米)
-plate:
-  top_offset_ratio: 0.08     # ↑↓边界相对灯条高度的偏移比例（按你的数据微调）
-  bottom_offset_ratio: 0.06
+  axis_len_m: 0.15        # 画坐标轴长度(米) - 增大以提高可见度
+
+display:
+  scale: 1.5
+
