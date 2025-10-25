@@ -9,7 +9,9 @@ Optimize the armor detection and PnP pose estimation system to ensure the final 
 ## Issues Identified
 
 ### 1. Spurious Light Bar Detection
-**Problem**: On the last frame, 5 light bars were detected instead of 4, including fragments with low aspect ratios (2.0-2.3) that disrupted pairing.
+**Problem**: On the last frame, 5 light bars were detected instead of the expected 4 (2 light bars per armor plate, left and right). An extra fragment with low aspect ratio (2.0-2.3) disrupted the pairing algorithm.
+
+**Root Cause**: The original min_ratio threshold (1.5) was too permissive, allowing near-rectangular regions to be classified as light bars.
 
 **Solution**: 
 - Increased `min_ratio` from 1.5 to 2.0 to filter rectangular noise
@@ -30,10 +32,11 @@ Optimize the armor detection and PnP pose estimation system to ensure the final 
 - Verified correct parameter loading
 
 ### 4. Coordinate Axes Too Short
-**Problem**: Axes were barely visible with length 0.08m projecting to only ~15 pixels for Y-axis.
+**Problem**: Axes were barely visible with length 0.08m projecting to only ~15 pixels for Y-axis on distant armor plates.
 
 **Solution**:
-- Increased `axis_len_m` from 0.08 to 0.15 meters for better visibility
+- Increased `axis_len_m` from 0.08 to 0.15 meters (verified in config/params.yaml line 69)
+- This provides better visibility while maintaining realistic scale
 
 ### 5. Incorrect Last Frame Capture
 **Problem**: The frame saving logic saved the second-to-last processed frame instead of the actual last frame.
@@ -91,7 +94,9 @@ pnp:
 
 ### Verification
 ```
-Final output analysis (/tmp/step4_output.jpg):
+Final output analysis:
+- Output file: /tmp/step4_output.jpg (temporary location for testing)
+- Note: In production, output path should be configurable
 - Image size: 720x540
 - Green pixels (armor plate + Y-axis): 1,243
 - Blue/Red pixels (X and Z axes): Present
