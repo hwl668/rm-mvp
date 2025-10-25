@@ -16,10 +16,11 @@ gray:
   morph_k: 3
 
 lightbar:
-  min_area: 5         # 降低最小面积（小目标也保留）
-  min_ratio: 1.5      # 允许更矮胖（避免被裁掉）
-  max_ratio: 12.0     # 过细的也放行
-  angle_upright_deg: 35.0  # 角度放宽
+  min_area: 10        # 最小面积阈值（过滤噪声）
+  min_ratio: 3.0      # 长宽比阈值（灯条应该细长）
+  max_ratio: 12.0     # 最大长宽比
+  angle_upright_deg: 35.0  # 与竖直方向的最大角度
+  post_morph: 3       # 后处理形态学核大小
 
 pair:
   max_tilt_diff_deg: 12
@@ -64,7 +65,7 @@ armor:
   height: 0.050    # 装甲板实际高度(米) = 50 mm
 
 pnp:
-  reproj_thresh_px: 3.0   # 重投影误差阈值(像素)
+  reproj_thresh_px: 4.0   # 重投影误差阈值(像素) - 放宽以适应边缘帧
   axis_len_m: 0.08        # 画坐标轴长度(米)
 plate:
   top_offset_ratio: 0.08     # ↑↓边界相对灯条高度的偏移比例（按你的数据微调）

@@ -74,13 +74,22 @@ int main(int argc, char** argv) try {
 
   cv::Mat current = frame.clone();
 
+  cv::Mat last_processed_frame;
+  
   for (;;) {
     if (!paused && !ended) {
       cv::Mat next;
       if (!vr.read(next) || next.empty()) {
         ended = true;
         paused = true;
-        std::cout << "[step4] Reached end of video. Press ESC to exit.\n";
+        std::cout << "[step4] Reached end of video. Saving last frame...\n";
+        if (!last_processed_frame.empty()) {
+          cv::imwrite("/tmp/step4_output.jpg", last_processed_frame);
+          std::cout << "[step4] Saved to /tmp/step4_output.jpg.\n";
+        }
+        // Auto-exit after 1 second
+        cv::waitKey(1000);
+        break;
       } else {
         current = next;
       }
@@ -129,6 +138,16 @@ int main(int argc, char** argv) try {
     EnrichLightBarsWithEndpoints(bars);
 
     auto pairs = PairLights(bars, P);
+    // Debug: show info about all detected bars
+    if (bars.size() >= 4) {
+      std::cout << "[DEBUG] Frame - bars=" << bars.size() << " pairs=" << pairs.size();
+      for (size_t i = 0; i < bars.size(); i++) {
+        std::cout << " | Bar" << i << ": area=" << bars[i].area 
+                  << " ratio=" << bars[i].ratio 
+                  << " center=(" << bars[i].center.x << "," << bars[i].center.y << ")";
+      }
+      std::cout << "\n";
+    }
     if (pairs.empty() && bars.size() >= 2) {
       std::vector<int> idx(bars.size());
       std::iota(idx.begin(), idx.end(), 0);
@@ -153,6 +172,10 @@ int main(int argc, char** argv) try {
         pose = SolveArmorPnP(corners, cam.K, cam.dist,
                              armor_width, armor_height, reproj_thr);
         pose_ok = pose.ok;
+        std::cout << "[DEBUG] Frame pose - ok=" << pose.ok 
+                  << " reproj_err=" << pose.reproj_err 
+                  << " inliers=" << pose.inliers 
+                  << " thresh=" << reproj_thr << "\n";
         if (pose_ok) {
           DrawPoseAxes(show, cam.K, cam.dist, pose, axis_len);
           auto toPoint = [](const cv::Point2f& p) {
@@ -174,6 +197,8 @@ int main(int argc, char** argv) try {
     }
 
     cv::imshow("Pose Viewer", show);
+    last_processed_frame = show.clone();
+    
     int delay = (paused || ended) ? 30 : 1;
     int key = cv::waitKey(delay);
     if (key == 27) break;           // ESC
