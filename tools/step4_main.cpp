@@ -74,13 +74,16 @@ int main(int argc, char** argv) try {
 
   cv::Mat current = frame.clone();
 
+  cv::Mat last_processed_frame;
+  bool should_exit = false;
+  
   for (;;) {
     if (!paused && !ended) {
       cv::Mat next;
       if (!vr.read(next) || next.empty()) {
         ended = true;
         paused = true;
-        std::cout << "[step4] Reached end of video. Press ESC to exit.\n";
+        std::cout << "[step4] Reached end of video.\n";
       } else {
         current = next;
       }
@@ -149,7 +152,8 @@ int main(int argc, char** argv) try {
     if (!pairs.empty()) {
       const LBBox& L = bars[pairs[0].li];
       const LBBox& R = bars[pairs[0].ri];
-      if (EstimatePlateCorners(L, R, P, corners)) {
+      bool corners_ok = EstimatePlateCorners(L, R, P, corners);
+      if (corners_ok) {
         pose = SolveArmorPnP(corners, cam.K, cam.dist,
                              armor_width, armor_height, reproj_thr);
         pose_ok = pose.ok;
@@ -174,6 +178,17 @@ int main(int argc, char** argv) try {
     }
 
     cv::imshow("Pose Viewer", show);
+    last_processed_frame = show.clone();
+    
+    // Save and exit after processing the last frame
+    if (ended && !should_exit) {
+      should_exit = true;
+      cv::imwrite("/tmp/step4_output.jpg", last_processed_frame);
+      std::cout << "[step4] Video ended. Saved last frame to /tmp/step4_output.jpg\n";
+      cv::waitKey(1000);
+      break;
+    }
+    
     int delay = (paused || ended) ? 30 : 1;
     int key = cv::waitKey(delay);
     if (key == 27) break;           // ESC
