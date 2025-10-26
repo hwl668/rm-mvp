@@ -11,10 +11,27 @@
 
 #include <iostream>
 #include <numeric>
+#include <filesystem>
+#include <deque>
 
 using namespace armor;
+namespace fs = std::filesystem;
 
 namespace {
+
+// Structure to store detection result for temporal consistency
+struct DetectionState {
+  bool has_detection = false;
+  PairLB best_pair;
+  std::array<cv::Point2f, 4> corners;
+  Pose pose;
+  double score = 0.0;
+  int frame_age = 0;  // Track how old this detection is
+};
+
+// Constants for detection logic
+constexpr double FALLBACK_SCORE = 0.5;  // Score for fallback detections
+constexpr int MAX_HISTORY_AGE = 3;      // Maximum age of historical detection to use
 
 void DrawPoseAxes(cv::Mat& img,
                   const cv::Mat& K,
@@ -44,6 +61,13 @@ void DrawPoseAxes(cv::Mat& img,
 int main(int argc, char** argv) try {
   std::string source = (argc > 1) ? argv[1] : "data/videos/arm.avi";
 
+  // Create output directory
+  const std::string out_dir = "out";
+  if (!fs::exists(out_dir)) {
+    fs::create_directories(out_dir);
+    std::cout << "[step4] Created output directory: " << out_dir << "\n";
+  }
+
   Camera cam = LoadCamera("config/camera.yaml");
   YAML::Node P = YAML::LoadFile("config/params.yaml");
 
@@ -66,6 +90,11 @@ int main(int argc, char** argv) try {
   cv::Size sz = vr.size();
   AdaptIntrinsicsToFrame(cam, sz.width, sz.height);
 
+  // Temporal smoothing: keep track of recent detections
+  std::deque<DetectionState> detection_history;
+  const int max_history = 5;
+  int frame_count = 0;
+
   cv::namedWindow("Pose Viewer", cv::WINDOW_NORMAL);
   cv::resizeWindow("Pose Viewer", 1280, 960);
 
@@ -80,15 +109,16 @@ int main(int argc, char** argv) try {
       if (!vr.read(next) || next.empty()) {
         ended = true;
         paused = true;
-        std::cout << "[step4] Reached end of video. Press ESC to exit.\n";
+        std::cout << "[step4] Reached end of video. Total frames processed: " << frame_count << ". Press ESC to exit.\n";
       } else {
         current = next;
+        frame_count++;
       }
     }
 
     cv::Mat show = current.clone();
 
-    // === Color + binary pipeline ===
+    // === Color + binary pipeline with improved anti-reflection parameters ===
     ColorResult cr = SelectColor(current, P);
 
     const YAML::Node gray_cfg = P["gray"];
@@ -104,32 +134,45 @@ int main(int argc, char** argv) try {
       if (cv::countNonZero(bin) < 10)
         bin = cr.mask.clone();
     }
+    
+    // Improved morphology to reduce reflection noise
     int post_k = P["lightbar"]["post_morph"].as<int>(3);
     if (post_k > 1) {
       int kk = std::max(1, post_k | 1);
       cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(kk, kk));
-      cv::morphologyEx(bin, bin, cv::MORPH_CLOSE, kernel);
-      cv::morphologyEx(bin, bin, cv::MORPH_OPEN,  kernel);
+      cv::morphologyEx(bin, bin, cv::MORPH_OPEN, kernel);  // Open first to remove small noise
+      cv::morphologyEx(bin, bin, cv::MORPH_CLOSE, kernel); // Then close to fill gaps
     }
 
     auto bars = ExtractLightBarCandidates(bin, P);
-    if (bars.empty()) {
+    
+    // Relaxed parameters only if no detection (temporal consistency check)
+    if (bars.empty() && !detection_history.empty()) {
       YAML::Node P_relaxed = YAML::Clone(P);
       YAML::Node light = P_relaxed["lightbar"];
-      double min_area  = light["min_area"].as<double>(20.0) * 0.5;
-      double min_ratio = light["min_ratio"].as<double>(3.0) * 0.6;
-      double max_ratio = light["max_ratio"].as<double>(25.0) * 1.5;
-      double ang_upr   = light["angle_upright_deg"].as<double>(25.0) + 20.0;
-      light["min_area"] = std::max(4.0, min_area);
+      double min_area  = light["min_area"].as<double>(5.0) * 0.8;
+      double min_ratio = light["min_ratio"].as<double>(1.5) * 0.9;
+      double max_ratio = light["max_ratio"].as<double>(12.0) * 1.2;
+      double ang_upr   = light["angle_upright_deg"].as<double>(35.0) + 10.0;
+      light["min_area"] = std::max(3.0, min_area);
       light["min_ratio"] = std::max(1.2, min_ratio);
       light["max_ratio"] = std::max(10.0, max_ratio);
-      light["angle_upright_deg"] = std::min(75.0, ang_upr);
+      light["angle_upright_deg"] = std::min(50.0, ang_upr);
       bars = ExtractLightBarCandidates(bin, P_relaxed);
     }
     EnrichLightBarsWithEndpoints(bars);
 
+    // CRITICAL: Only detect ONE pair of light bars
     auto pairs = PairLights(bars, P);
+    
+    // Keep only the best pair (highest score)
+    if (pairs.size() > 1) {
+      pairs.resize(1);  // Keep only the best scoring pair
+    }
+    
+    // Fallback: use previous detection or two largest bars
     if (pairs.empty() && bars.size() >= 2) {
+      // Fallback: use two largest bars
       std::vector<int> idx(bars.size());
       std::iota(idx.begin(), idx.end(), 0);
       std::sort(idx.begin(), idx.end(), [&](int a, int b) {
@@ -137,15 +180,25 @@ int main(int argc, char** argv) try {
       });
       int li = idx[0], ri = idx[1];
       if (bars[li].center.x > bars[ri].center.x) std::swap(li, ri);
-      PairLB fallback; fallback.li = li; fallback.ri = ri;
+      PairLB fallback; 
+      fallback.li = li; 
+      fallback.ri = ri;
+      fallback.score = FALLBACK_SCORE;
       pairs.push_back(fallback);
     }
 
+    // Draw light bars for visualization
     for (const auto& b : bars) DrawLightBar(show, b);
+
+    // Detection state for this frame
+    DetectionState current_detection;
+    current_detection.has_detection = false;
 
     bool pose_ok = false;
     Pose pose;
     std::array<cv::Point2f, 4> corners;
+    
+    // Process only the SINGLE best pair
     if (!pairs.empty()) {
       const LBBox& L = bars[pairs[0].li];
       const LBBox& R = bars[pairs[0].ri];
@@ -154,6 +207,13 @@ int main(int argc, char** argv) try {
                              armor_width, armor_height, reproj_thr);
         pose_ok = pose.ok;
         if (pose_ok) {
+          // Store detection state
+          current_detection.has_detection = true;
+          current_detection.best_pair = pairs[0];
+          current_detection.corners = corners;
+          current_detection.pose = pose;
+          current_detection.score = pairs[0].score;
+
           DrawPoseAxes(show, cam.K, cam.dist, pose, axis_len);
           auto toPoint = [](const cv::Point2f& p) {
             return cv::Point(cvRound(p.x), cvRound(p.y));
@@ -173,6 +233,40 @@ int main(int argc, char** argv) try {
       }
     }
 
+    // If no detection in current frame but we have history, use previous detection for stability
+    if (!current_detection.has_detection && !detection_history.empty()) {
+      // Use the most recent valid detection (within MAX_HISTORY_AGE frames)
+      for (auto it = detection_history.rbegin(); it != detection_history.rend(); ++it) {
+        if (it->has_detection && it->frame_age < MAX_HISTORY_AGE) {
+          current_detection = *it;
+          current_detection.frame_age = it->frame_age + 1;  // Increment age
+          // Draw with slightly different color to indicate it's from history
+          DrawPoseAxes(show, cam.K, cam.dist, current_detection.pose, axis_len);
+          auto toPoint = [](const cv::Point2f& p) {
+            return cv::Point(cvRound(p.x), cvRound(p.y));
+          };
+          std::vector<cv::Point> outline;
+          outline.reserve(4);
+          for (const auto& pt : current_detection.corners) outline.push_back(toPoint(pt));
+          cv::polylines(show, std::vector<std::vector<cv::Point>>{outline}, true,
+                        {0, 200, 200}, 2, cv::LINE_AA);  // Cyan color for historical detection
+          break;
+        }
+      }
+    }
+
+    // Update detection history
+    detection_history.push_back(current_detection);
+    if (detection_history.size() > max_history) {
+      detection_history.pop_front();
+    }
+
+    // Save output image to 'out' directory
+    if (!paused && !ended) {
+      std::string out_path = out_dir + "/frame_" + std::to_string(frame_count) + ".jpg";
+      cv::imwrite(out_path, show);
+    }
+
     cv::imshow("Pose Viewer", show);
     int delay = (paused || ended) ? 30 : 1;
     int key = cv::waitKey(delay);
@@ -182,6 +276,7 @@ int main(int argc, char** argv) try {
     }
   }
 
+  std::cout << "[step4] Saved " << frame_count << " frames to " << out_dir << "/\n";
   return 0;
 } catch (const std::exception& e) {
   std::cerr << "[step4] Exception: " << e.what() << "\n";

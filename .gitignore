@@ -1,0 +1,18 @@
+# Build artifacts
+build/
+_codeql_build_dir/
+_codeql_detected_source_root
+*.o
+*.a
+*.so
+*.exe
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Output directory
+out/
