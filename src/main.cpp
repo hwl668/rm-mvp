@@ -25,7 +25,12 @@ struct DetectionState {
   std::array<cv::Point2f, 4> corners;
   Pose pose;
   double score = 0.0;
+  int frame_age = 0;  // Track how old this detection is
 };
+
+// Constants for detection logic
+constexpr double FALLBACK_SCORE = 0.5;  // Score for fallback detections
+constexpr int MAX_HISTORY_AGE = 3;      // Maximum age of historical detection to use
 
 static void DrawAxes(cv::Mat& img, const cv::Mat& K, const cv::Mat& dist,
          const cv::Vec3d& rvec, const cv::Vec3d& tvec, double axis_len_m)
@@ -161,13 +166,18 @@ int main(int argc, char** argv) try {
       pairs.resize(1);
     }
     
-    if(pairs.empty() && bars.size() >= 2 && !detection_history.empty()){
+    // Fallback: if no pairs found but have bars, create fallback pair
+    // This applies regardless of history to ensure consistent behavior
+    if(pairs.empty() && bars.size() >= 2){
       std::vector<int> idx(bars.size());
       std::iota(idx.begin(), idx.end(), 0);
       std::sort(idx.begin(), idx.end(), [&](int a, int b){ return bars[a].area > bars[b].area; });
       int li = idx[0], ri = idx[1];
       if(bars[li].center.x > bars[ri].center.x) std::swap(li, ri);
-      PairLB fallback; fallback.li = li; fallback.ri = ri; fallback.score = 0.5;
+      PairLB fallback; 
+      fallback.li = li; 
+      fallback.ri = ri; 
+      fallback.score = FALLBACK_SCORE;
       pairs.push_back(fallback);
     }
 
@@ -229,9 +239,11 @@ int main(int argc, char** argv) try {
 
     // Use history for temporal consistency if no detection
     if(!current_detection.has_detection && !detection_history.empty()){
+      // Only use recent historical detections (within MAX_HISTORY_AGE frames)
       for(auto it = detection_history.rbegin(); it != detection_history.rend(); ++it){
-        if(it->has_detection){
+        if(it->has_detection && it->frame_age < MAX_HISTORY_AGE){
           current_detection = *it;
+          current_detection.frame_age = it->frame_age + 1;  // Increment age
           DrawAxes(show, cam.K, cam.dist, current_detection.pose.rvec, 
                    current_detection.pose.tvec, AX);
           auto toPoint = [](const cv::Point2f& p){ return cv::Point(cvRound(p.x), cvRound(p.y)); };
@@ -241,7 +253,7 @@ int main(int argc, char** argv) try {
           cv::polylines(show, std::vector<std::vector<cv::Point>>{outline}, true,
                         {0, 200, 200}, 2, cv::LINE_AA);
           char buf[128];
-          std::snprintf(buf, sizeof(buf), "Using previous detection (temporal smoothing)");
+          std::snprintf(buf, sizeof(buf), "Using detection from %d frame(s) ago", current_detection.frame_age);
           PutTextShadow(show, buf, {20, 120}, 0.8, {0,200,200});
           break;
         }
@@ -259,7 +271,7 @@ int main(int argc, char** argv) try {
     double dt=(t_now-t_prev)/cv::getTickFrequency(); t_prev=t_now;
     double fps_inst = (dt>1e-6)? 1.0/dt : 0.0; fps_meas = (fps_meas<=0)? fps_inst : 0.9*fps_meas+0.1*fps_inst;
 
-    char line1[256], line2[256], line3[256];
+    char line1[256], line2[256];
     std::snprintf(line1, sizeof(line1),
       "BUILD %s %s | color=%s | bars=%zu pairs=1 (best only) | fps cap=%.1f meas=%.1f",
       __DATE__, __TIME__,

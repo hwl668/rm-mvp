@@ -26,7 +26,12 @@ struct DetectionState {
   std::array<cv::Point2f, 4> corners;
   Pose pose;
   double score = 0.0;
+  int frame_age = 0;  // Track how old this detection is
 };
+
+// Constants for detection logic
+constexpr double FALLBACK_SCORE = 0.5;  // Score for fallback detections
+constexpr int MAX_HISTORY_AGE = 3;      // Maximum age of historical detection to use
 
 void DrawPoseAxes(cv::Mat& img,
                   const cv::Mat& K,
@@ -167,22 +172,19 @@ int main(int argc, char** argv) try {
     
     // Fallback: use previous detection or two largest bars
     if (pairs.empty() && bars.size() >= 2) {
-      // Use history if available and recent
-      if (!detection_history.empty() && detection_history.back().has_detection) {
-        // Try to find similar bars based on position
-        std::vector<int> idx(bars.size());
-        std::iota(idx.begin(), idx.end(), 0);
-        std::sort(idx.begin(), idx.end(), [&](int a, int b) {
-          return bars[a].area > bars[b].area;
-        });
-        int li = idx[0], ri = idx[1];
-        if (bars[li].center.x > bars[ri].center.x) std::swap(li, ri);
-        PairLB fallback; 
-        fallback.li = li; 
-        fallback.ri = ri;
-        fallback.score = 0.5; // Lower score for fallback
-        pairs.push_back(fallback);
-      }
+      // Fallback: use two largest bars
+      std::vector<int> idx(bars.size());
+      std::iota(idx.begin(), idx.end(), 0);
+      std::sort(idx.begin(), idx.end(), [&](int a, int b) {
+        return bars[a].area > bars[b].area;
+      });
+      int li = idx[0], ri = idx[1];
+      if (bars[li].center.x > bars[ri].center.x) std::swap(li, ri);
+      PairLB fallback; 
+      fallback.li = li; 
+      fallback.ri = ri;
+      fallback.score = FALLBACK_SCORE;
+      pairs.push_back(fallback);
     }
 
     // Draw light bars for visualization
@@ -233,10 +235,11 @@ int main(int argc, char** argv) try {
 
     // If no detection in current frame but we have history, use previous detection for stability
     if (!current_detection.has_detection && !detection_history.empty()) {
-      // Use the most recent valid detection for temporal consistency
+      // Use the most recent valid detection (within MAX_HISTORY_AGE frames)
       for (auto it = detection_history.rbegin(); it != detection_history.rend(); ++it) {
-        if (it->has_detection) {
+        if (it->has_detection && it->frame_age < MAX_HISTORY_AGE) {
           current_detection = *it;
+          current_detection.frame_age = it->frame_age + 1;  // Increment age
           // Draw with slightly different color to indicate it's from history
           DrawPoseAxes(show, cam.K, cam.dist, current_detection.pose, axis_len);
           auto toPoint = [](const cv::Point2f& p) {
