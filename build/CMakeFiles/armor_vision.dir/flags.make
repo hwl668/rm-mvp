@@ -6,5 +6,5 @@ CXX_DEFINES =
 
 CXX_INCLUDES = -I/home/runner/work/rm-mvp/rm-mvp/include -isystem /usr/include/opencv4
 
-CXX_FLAGS = -std=gnu++17 -fPIE
+CXX_FLAGS = -O3 -DNDEBUG -std=gnu++17 -fPIE
 
