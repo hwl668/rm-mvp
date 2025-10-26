@@ -24,9 +24,18 @@ static void DrawAxes(cv::Mat& img, const cv::Mat& K, const cv::Mat& dist,
   std::vector<cv::Point2f> axis2d;
   cv::projectPoints(axis3d, rvec, tvec, K, dist, axis2d);
   auto O=axis2d[0], X=axis2d[1], Y=axis2d[2], Z=axis2d[3];
-  cv::line(img, O, X, {0,0,255}, 2, cv::LINE_AA);   // X 红
-  cv::line(img, O, Y, {0,255,0}, 2, cv::LINE_AA);   // Y 绿
-  cv::line(img, O, Z, {255,0,0}, 2, cv::LINE_AA);   // Z 蓝
+  // Draw thicker axes
+  cv::line(img, O, X, {0,0,255}, 3, cv::LINE_AA);   // X red
+  cv::line(img, O, Y, {0,255,0}, 3, cv::LINE_AA);   // Y green
+  cv::line(img, O, Z, {255,0,0}, 3, cv::LINE_AA);   // Z blue
+  
+  // Add axis labels X, Y, Z
+  cv::putText(img, "X", X + cv::Point2f(5.f, 5.f), cv::FONT_HERSHEY_SIMPLEX, 0.8, {0, 0, 0}, 3, cv::LINE_AA);
+  cv::putText(img, "X", X + cv::Point2f(5.f, 5.f), cv::FONT_HERSHEY_SIMPLEX, 0.8, {0, 0, 255}, 2, cv::LINE_AA);
+  cv::putText(img, "Y", Y + cv::Point2f(5.f, 5.f), cv::FONT_HERSHEY_SIMPLEX, 0.8, {0, 0, 0}, 3, cv::LINE_AA);
+  cv::putText(img, "Y", Y + cv::Point2f(5.f, 5.f), cv::FONT_HERSHEY_SIMPLEX, 0.8, {0, 255, 0}, 2, cv::LINE_AA);
+  cv::putText(img, "Z", Z + cv::Point2f(5.f, 5.f), cv::FONT_HERSHEY_SIMPLEX, 0.8, {0, 0, 0}, 3, cv::LINE_AA);
+  cv::putText(img, "Z", Z + cv::Point2f(5.f, 5.f), cv::FONT_HERSHEY_SIMPLEX, 0.8, {255, 0, 0}, 2, cv::LINE_AA);
 }
 
 static void BannerParams(const YAML::Node& P) {
@@ -62,7 +71,8 @@ int main(int argc, char** argv) try {
   AdaptIntrinsicsToFrame(cam, sz.width, sz.height);
 
   bool paused=false;
-  double fps_meas=0.0, t_prev=cv::getTickCount();
+  // Removed unused fps_meas and t_prev variables
+  // double fps_meas=0.0, t_prev=cv::getTickCount();
 
   for(;;){
     if(!paused){
@@ -169,37 +179,39 @@ int main(int argc, char** argv) try {
         if(have_pose){
           DrawAxes(show, cam.K, cam.dist, pose.rvec, pose.tvec, AX);
 
-          // 打印位姿
-          char buf[256];
-          double X=pose.tvec[0], Y=pose.tvec[1], Z=pose.tvec[2];
-          std::snprintf(buf, sizeof(buf),
-              "PnP OK | X=%.3f Y=%.3f Z=%.3f m  | Err=%.2f px  Inl=%d",
-              X, Y, Z, pose.reproj_err, pose.inliers);
-          PutTextShadow(show, buf, {20, 120}, 0.8, {0,255,0});
+          // Remove parameter display as per requirements
+          // char buf[256];
+          // double X=pose.tvec[0], Y=pose.tvec[1], Z=pose.tvec[2];
+          // std::snprintf(buf, sizeof(buf),
+          //     "PnP OK | X=%.3f Y=%.3f Z=%.3f m  | Err=%.2f px  Inl=%d",
+          //     X, Y, Z, pose.reproj_err, pose.inliers);
+          // PutTextShadow(show, buf, {20, 120}, 0.8, {0,255,0});
         } else {
-          char buf[128];
-          std::snprintf(buf, sizeof(buf), "PnP FAIL | Err=%.2f px  Inl=%d", pose.reproj_err, pose.inliers);
-          PutTextShadow(show, buf, {20, 120}, 0.8, {0,200,255});
+          // Remove parameter display as per requirements
+          // char buf[128];
+          // std::snprintf(buf, sizeof(buf), "PnP FAIL | Err=%.2f px  Inl=%d", pose.reproj_err, pose.inliers);
+          // PutTextShadow(show, buf, {20, 120}, 0.8, {0,200,255});
         }
       }
     }
 
     // ============ 统计/FPS/提示 ============
-    double t_now=cv::getTickCount();
-    double dt=(t_now-t_prev)/cv::getTickFrequency(); t_prev=t_now;
-    double fps_inst = (dt>1e-6)? 1.0/dt : 0.0; fps_meas = (fps_meas<=0)? fps_inst : 0.9*fps_meas+0.1*fps_inst;
+    // Remove parameter display as per requirements
+    // double t_now=cv::getTickCount();
+    // double dt=(t_now-t_prev)/cv::getTickFrequency(); t_prev=t_now;
+    // double fps_inst = (dt>1e-6)? 1.0/dt : 0.0; fps_meas = (fps_meas<=0)? fps_inst : 0.9*fps_meas+0.1*fps_inst;
 
-    char line1[256], line2[256];
-    std::snprintf(line1, sizeof(line1),
-      "BUILD %s %s | color=%s | bars=%zu pairs=%zu | fps cap=%.1f meas=%.1f",
-      __DATE__, __TIME__,
-      (cr.color==TeamColor::RED?"RED":(cr.color==TeamColor::BLUE?"BLUE":"UNK")),
-      bars.size(), pairs.size(), vr.fps(), fps_meas);
-    PutTextShadow(show, line1, {20,40}, 0.8);
+    // char line1[256], line2[256];
+    // std::snprintf(line1, sizeof(line1),
+    //   "BUILD %s %s | color=%s | bars=%zu pairs=%zu | fps cap=%.1f meas=%.1f",
+    //   __DATE__, __TIME__,
+    //   (cr.color==TeamColor::RED?"RED":(cr.color==TeamColor::BLUE?"BLUE":"UNK")),
+    //   bars.size(), pairs.size(), vr.fps(), fps_meas);
+    // PutTextShadow(show, line1, {20,40}, 0.8);
 
-    std::snprintf(line2, sizeof(line2),
-      "Keys: ESC quit | P pause | R reload params | S save debug");
-    PutTextShadow(show, line2, {20,80}, 0.7);
+    // std::snprintf(line2, sizeof(line2),
+    //   "Keys: ESC quit | P pause | R reload params | S save debug");
+    // PutTextShadow(show, line2, {20,80}, 0.7);
 
     cv::imshow("armor_vision", show);
     int k=cv::waitKey(1);
