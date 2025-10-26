@@ -1,6 +1,0 @@
-/home/runner/work/rm-mvp/rm-mvp/_codeql_build_dir/CMakeFiles/armor_vision.dir
-/home/runner/work/rm-mvp/rm-mvp/_codeql_build_dir/CMakeFiles/step2_main.dir
-/home/runner/work/rm-mvp/rm-mvp/_codeql_build_dir/CMakeFiles/step3_main.dir
-/home/runner/work/rm-mvp/rm-mvp/_codeql_build_dir/CMakeFiles/step4_main.dir
-/home/runner/work/rm-mvp/rm-mvp/_codeql_build_dir/CMakeFiles/edit_cache.dir
-/home/runner/work/rm-mvp/rm-mvp/_codeql_build_dir/CMakeFiles/rebuild_cache.dir
