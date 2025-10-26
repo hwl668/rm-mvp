@@ -65,7 +65,7 @@ armor:
 
 pnp:
   reproj_thresh_px: 3.0   # 重投影误差阈值(像素)
-  axis_len_m: 0.08        # 画坐标轴长度(米)
+  axis_len_m: 0.15        # 画坐标轴长度(米) - increased for better visibility
 plate:
   top_offset_ratio: 0.08     # ↑↓边界相对灯条高度的偏移比例（按你的数据微调）
   bottom_offset_ratio: 0.06

@@ -31,12 +31,18 @@ void DrawPoseAxes(cv::Mat& img,
   cv::projectPoints(axis3d, pose.rvec, pose.tvec, K, dist, axis2d);
   if (axis2d.size() != 4) return;
 
-  cv::line(img, axis2d[0], axis2d[1], {0, 0, 255}, 2, cv::LINE_AA);
-  cv::line(img, axis2d[0], axis2d[2], {0, 255, 0}, 2, cv::LINE_AA);
-  cv::line(img, axis2d[0], axis2d[3], {255, 0, 0}, 2, cv::LINE_AA);
+  // Draw thicker axes
+  cv::line(img, axis2d[0], axis2d[1], {0, 0, 255}, 3, cv::LINE_AA);    // X axis - red
+  cv::line(img, axis2d[0], axis2d[2], {0, 255, 0}, 3, cv::LINE_AA);    // Y axis - green
+  cv::line(img, axis2d[0], axis2d[3], {255, 0, 0}, 3, cv::LINE_AA);    // Z axis - blue
 
+  // Draw origin
   cv::circle(img, axis2d[0], 6, {0, 255, 255}, -1, cv::LINE_AA);
-  PutTextShadow(img, "O", axis2d[0] + cv::Point2f(6.f, -6.f), 0.6, {0, 255, 255});
+  
+  // Add axis labels X, Y, Z
+  PutTextShadow(img, "X", axis2d[1] + cv::Point2f(5.f, 5.f), 0.8, {0, 0, 255});
+  PutTextShadow(img, "Y", axis2d[2] + cv::Point2f(5.f, 5.f), 0.8, {0, 255, 0});
+  PutTextShadow(img, "Z", axis2d[3] + cv::Point2f(5.f, 5.f), 0.8, {255, 0, 0});
 }
 
 } // namespace

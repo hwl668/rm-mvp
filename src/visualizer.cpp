@@ -16,9 +16,10 @@ void DrawLightBar(cv::Mat& img, const LBBox& b,
   cv::circle(img, b.ep[0], 6, ep_color, -1, cv::LINE_AA);
   cv::circle(img, b.ep[1], 6, ep_color, -1, cv::LINE_AA);
 
-  char txt[64];
-  std::snprintf(txt, sizeof(txt), "r=%.1f up=%.1f", b.ratio, b.upright_deg);
-  PutTextShadow(img, txt, q[1], 0.7, {0,255,255});
+  // Remove parameter display as per requirements
+  // char txt[64];
+  // std::snprintf(txt, sizeof(txt), "r=%.1f up=%.1f", b.ratio, b.upright_deg);
+  // PutTextShadow(img, txt, q[1], 0.7, {0,255,255});
 }
 
 void DrawBestPair(cv::Mat& img, const std::vector<LBBox>& bars, const PairLB& p,
@@ -27,8 +28,9 @@ void DrawBestPair(cv::Mat& img, const std::vector<LBBox>& bars, const PairLB& p,
   const auto& L = bars[p.li];
   const auto& R = bars[p.ri];
   cv::line(img, L.center, R.center, color, 4, cv::LINE_AA);
-  char txt[64]; std::snprintf(txt, sizeof(txt), "best=%.2f", p.score);
-  PutTextShadow(img, txt, (L.center+R.center)*0.5 + cv::Point2f(0,-15), 0.9, color);
+  // Remove parameter display as per requirements
+  // char txt[64]; std::snprintf(txt, sizeof(txt), "best=%.2f", p.score);
+  // PutTextShadow(img, txt, (L.center+R.center)*0.5 + cv::Point2f(0,-15), 0.9, color);
 }
 
 } // namespace armor
