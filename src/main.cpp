@@ -2,8 +2,8 @@
 #include "armor/color_selector.hpp"
 #include "armor/lightbar_detector.hpp"
 #include "armor/pairing.hpp"
-#include "armor/plate_corners.hpp"  // 需提供接口：见下方注释
-#include "armor/pnp_solver.hpp"     // 需提供接口：见下方注释
+#include "armor/plate_corners.hpp"
+#include "armor/pnp_solver.hpp"
 #include "armor/visualizer.hpp"
 
 #include <yaml-cpp/yaml.h>
@@ -12,9 +12,20 @@
 #include <array>
 #include <algorithm>
 #include <numeric>
+#include <filesystem>
+#include <deque>
 
 using namespace armor;
+namespace fs = std::filesystem;
 
+// Structure to store detection state for temporal consistency
+struct DetectionState {
+  bool has_detection = false;
+  PairLB best_pair;
+  std::array<cv::Point2f, 4> corners;
+  Pose pose;
+  double score = 0.0;
+};
 
 static void DrawAxes(cv::Mat& img, const cv::Mat& K, const cv::Mat& dist,
          const cv::Vec3d& rvec, const cv::Vec3d& tvec, double axis_len_m)
@@ -44,6 +55,14 @@ static void BannerParams(const YAML::Node& P) {
 int main(int argc, char** argv) try {
   // 1) 输入源与配置
   std::string source = (argc>1)? argv[1] : "data/videos/arm.avi";
+  
+  // Create output directory
+  const std::string out_dir = "out";
+  if (!fs::exists(out_dir)) {
+    fs::create_directories(out_dir);
+    std::cout << "[main] Created output directory: " << out_dir << "\n";
+  }
+  
   Camera cam = LoadCamera("config/camera.yaml");
   YAML::Node P = YAML::LoadFile("config/params.yaml");
   BannerParams(P);
@@ -60,6 +79,11 @@ int main(int argc, char** argv) try {
   if(!vr.read(frame)||frame.empty()){ std::cerr<<"[main] first frame fail.\n"; return 3; }
   cv::Size sz = vr.size();
   AdaptIntrinsicsToFrame(cam, sz.width, sz.height);
+
+  // Temporal smoothing
+  std::deque<DetectionState> detection_history;
+  const int max_history = 5;
+  int frame_count = 0;
 
   bool paused=false;
   double fps_meas=0.0, t_prev=cv::getTickCount();
@@ -82,6 +106,7 @@ int main(int argc, char** argv) try {
           break;
         }
       }
+      frame_count++;
     }
 
     // ============ 颜色自动判定（HSV） ============
@@ -102,40 +127,47 @@ int main(int argc, char** argv) try {
         bin = cr.mask.clone();
     }
 
+    // Improved morphology to reduce reflection noise
     int post_k = P["lightbar"]["post_morph"].as<int>(3);
     if(post_k > 1){
       int kk = std::max(1, post_k | 1);
       cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, {kk, kk});
-      cv::morphologyEx(bin, bin, cv::MORPH_CLOSE, kernel);
-      cv::morphologyEx(bin, bin, cv::MORPH_OPEN,  kernel);
+      cv::morphologyEx(bin, bin, cv::MORPH_OPEN, kernel);  // Open first to remove noise
+      cv::morphologyEx(bin, bin, cv::MORPH_CLOSE, kernel); // Then close to fill gaps
     }
 
     // ============ 候选灯条 + 端点 ============
     auto bars = ExtractLightBarCandidates(bin, P);
-    if(bars.empty()){
+    if(bars.empty() && !detection_history.empty()){
       YAML::Node P_relaxed = YAML::Clone(P);
       YAML::Node light = P_relaxed["lightbar"];
-      double min_area  = light["min_area"].as<double>(20.0) * 0.5;
-      double min_ratio = light["min_ratio"].as<double>(3.0) * 0.6;
-      double max_ratio = light["max_ratio"].as<double>(25.0) * 1.5;
-      double ang_upr   = light["angle_upright_deg"].as<double>(25.0) + 20.0;
+      double min_area  = light["min_area"].as<double>(8.0) * 0.8;
+      double min_ratio = light["min_ratio"].as<double>(2.0) * 0.9;
+      double max_ratio = light["max_ratio"].as<double>(10.0) * 1.2;
+      double ang_upr   = light["angle_upright_deg"].as<double>(30.0) + 10.0;
       light["min_area"] = std::max(4.0, min_area);
-      light["min_ratio"] = std::max(1.2, min_ratio);
+      light["min_ratio"] = std::max(1.5, min_ratio);
       light["max_ratio"] = std::max(10.0, max_ratio);
-      light["angle_upright_deg"] = std::min(75.0, ang_upr);
+      light["angle_upright_deg"] = std::min(45.0, ang_upr);
       bars = ExtractLightBarCandidates(bin, P_relaxed);
     }
     EnrichLightBarsWithEndpoints(bars);
 
-    // ============ 配对 ============
+    // ============ 配对 - ONLY ONE PAIR ============
     auto pairs = PairLights(bars, P);
-    if(pairs.empty() && bars.size() >= 2){
+    
+    // Keep only the best pair
+    if(pairs.size() > 1){
+      pairs.resize(1);
+    }
+    
+    if(pairs.empty() && bars.size() >= 2 && !detection_history.empty()){
       std::vector<int> idx(bars.size());
       std::iota(idx.begin(), idx.end(), 0);
       std::sort(idx.begin(), idx.end(), [&](int a, int b){ return bars[a].area > bars[b].area; });
       int li = idx[0], ri = idx[1];
       if(bars[li].center.x > bars[ri].center.x) std::swap(li, ri);
-      PairLB fallback; fallback.li = li; fallback.ri = ri; fallback.score = 0.0;
+      PairLB fallback; fallback.li = li; fallback.ri = ri; fallback.score = 0.5;
       pairs.push_back(fallback);
     }
 
@@ -143,6 +175,10 @@ int main(int argc, char** argv) try {
     cv::Mat show = frame.clone();
     for(const auto& b: bars) DrawLightBar(show, b);
     if(!pairs.empty()) DrawBestPair(show, bars, pairs[0]);
+
+    // Detection state for this frame
+    DetectionState current_detection;
+    current_detection.has_detection = false;
 
     // ============ 若有最佳配对：角点外推 + PnP ============
     bool have_pose=false; Pose pose; std::array<cv::Point2f,4> cimg;
@@ -167,6 +203,13 @@ int main(int argc, char** argv) try {
         have_pose = pose.ok && pose.reproj_err <= RE;
 
         if(have_pose){
+          // Store detection state
+          current_detection.has_detection = true;
+          current_detection.best_pair = pairs[0];
+          current_detection.corners = cimg;
+          current_detection.pose = pose;
+          current_detection.score = pairs[0].score;
+
           DrawAxes(show, cam.K, cam.dist, pose.rvec, pose.tvec, AX);
 
           // 打印位姿
@@ -184,21 +227,48 @@ int main(int argc, char** argv) try {
       }
     }
 
+    // Use history for temporal consistency if no detection
+    if(!current_detection.has_detection && !detection_history.empty()){
+      for(auto it = detection_history.rbegin(); it != detection_history.rend(); ++it){
+        if(it->has_detection){
+          current_detection = *it;
+          DrawAxes(show, cam.K, cam.dist, current_detection.pose.rvec, 
+                   current_detection.pose.tvec, AX);
+          auto toPoint = [](const cv::Point2f& p){ return cv::Point(cvRound(p.x), cvRound(p.y)); };
+          std::vector<cv::Point> outline;
+          outline.reserve(4);
+          for(const auto& pt : current_detection.corners) outline.push_back(toPoint(pt));
+          cv::polylines(show, std::vector<std::vector<cv::Point>>{outline}, true,
+                        {0, 200, 200}, 2, cv::LINE_AA);
+          char buf[128];
+          std::snprintf(buf, sizeof(buf), "Using previous detection (temporal smoothing)");
+          PutTextShadow(show, buf, {20, 120}, 0.8, {0,200,200});
+          break;
+        }
+      }
+    }
+
+    // Update history
+    detection_history.push_back(current_detection);
+    if(detection_history.size() > max_history){
+      detection_history.pop_front();
+    }
+
     // ============ 统计/FPS/提示 ============
     double t_now=cv::getTickCount();
     double dt=(t_now-t_prev)/cv::getTickFrequency(); t_prev=t_now;
     double fps_inst = (dt>1e-6)? 1.0/dt : 0.0; fps_meas = (fps_meas<=0)? fps_inst : 0.9*fps_meas+0.1*fps_inst;
 
-    char line1[256], line2[256];
+    char line1[256], line2[256], line3[256];
     std::snprintf(line1, sizeof(line1),
-      "BUILD %s %s | color=%s | bars=%zu pairs=%zu | fps cap=%.1f meas=%.1f",
+      "BUILD %s %s | color=%s | bars=%zu pairs=1 (best only) | fps cap=%.1f meas=%.1f",
       __DATE__, __TIME__,
       (cr.color==TeamColor::RED?"RED":(cr.color==TeamColor::BLUE?"BLUE":"UNK")),
-      bars.size(), pairs.size(), vr.fps(), fps_meas);
+      bars.size(), vr.fps(), fps_meas);
     PutTextShadow(show, line1, {20,40}, 0.8);
 
     std::snprintf(line2, sizeof(line2),
-      "Keys: ESC quit | P pause | R reload params | S save debug");
+      "Keys: ESC quit | P pause | R reload params | S save debug | frame=%d", frame_count);
     PutTextShadow(show, line2, {20,80}, 0.7);
 
     cv::imshow("armor_vision", show);
@@ -210,10 +280,10 @@ int main(int argc, char** argv) try {
       catch(...){ std::cerr<<"[main] reload params failed.\n"; }
     }
     else if(k=='s'||k=='S'){
-      static int idx=0;
-      cv::imwrite(cv::format("dbg_mask_%03d.png", idx), cr.mask);
-      cv::imwrite(cv::format("dbg_frame_%03d.png", idx), frame);
-      idx++; std::cout<<"[main] saved debug images.\n";
+      std::string out_path = out_dir + "/frame_" + std::to_string(frame_count) + ".jpg";
+      cv::imwrite(out_path, show);
+      cv::imwrite(cv::format("%s/mask_%d.png", out_dir.c_str(), frame_count), cr.mask);
+      std::cout<<"[main] saved debug images to " << out_dir << "/\n";
     }
   }
 
