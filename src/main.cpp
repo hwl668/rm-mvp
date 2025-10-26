@@ -29,13 +29,10 @@ static void DrawAxes(cv::Mat& img, const cv::Mat& K, const cv::Mat& dist,
   cv::line(img, O, Y, {0,255,0}, 3, cv::LINE_AA);   // Y green
   cv::line(img, O, Z, {255,0,0}, 3, cv::LINE_AA);   // Z blue
   
-  // Add axis labels X, Y, Z
-  cv::putText(img, "X", X + cv::Point2f(5.f, 5.f), cv::FONT_HERSHEY_SIMPLEX, 0.8, {0, 0, 0}, 3, cv::LINE_AA);
-  cv::putText(img, "X", X + cv::Point2f(5.f, 5.f), cv::FONT_HERSHEY_SIMPLEX, 0.8, {0, 0, 255}, 2, cv::LINE_AA);
-  cv::putText(img, "Y", Y + cv::Point2f(5.f, 5.f), cv::FONT_HERSHEY_SIMPLEX, 0.8, {0, 0, 0}, 3, cv::LINE_AA);
-  cv::putText(img, "Y", Y + cv::Point2f(5.f, 5.f), cv::FONT_HERSHEY_SIMPLEX, 0.8, {0, 255, 0}, 2, cv::LINE_AA);
-  cv::putText(img, "Z", Z + cv::Point2f(5.f, 5.f), cv::FONT_HERSHEY_SIMPLEX, 0.8, {0, 0, 0}, 3, cv::LINE_AA);
-  cv::putText(img, "Z", Z + cv::Point2f(5.f, 5.f), cv::FONT_HERSHEY_SIMPLEX, 0.8, {255, 0, 0}, 2, cv::LINE_AA);
+  // Add axis labels X, Y, Z using PutTextShadow for consistency
+  PutTextShadow(img, "X", X + cv::Point2f(5.f, 5.f), 0.8, {0, 0, 255});
+  PutTextShadow(img, "Y", Y + cv::Point2f(5.f, 5.f), 0.8, {0, 255, 0});
+  PutTextShadow(img, "Z", Z + cv::Point2f(5.f, 5.f), 0.8, {255, 0, 0});
 }
 
 static void BannerParams(const YAML::Node& P) {

@@ -1,8 +1,13 @@
 file(REMOVE_RECURSE
+  "CMakeFiles/step2_main.dir/link.d"
   "CMakeFiles/step2_main.dir/src/color_selector.cpp.o"
+  "CMakeFiles/step2_main.dir/src/color_selector.cpp.o.d"
   "CMakeFiles/step2_main.dir/src/io.cpp.o"
+  "CMakeFiles/step2_main.dir/src/io.cpp.o.d"
   "CMakeFiles/step2_main.dir/src/lightbar_detector.cpp.o"
+  "CMakeFiles/step2_main.dir/src/lightbar_detector.cpp.o.d"
   "CMakeFiles/step2_main.dir/tools/step2_main.cpp.o"
+  "CMakeFiles/step2_main.dir/tools/step2_main.cpp.o.d"
   "step2_main"
   "step2_main.pdb"
 )
