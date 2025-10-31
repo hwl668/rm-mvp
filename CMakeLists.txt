@@ -1,53 +1,42 @@
-cmake_minimum_required(VERSION 3.14)
-project(armor_vision CXX)
+cmake_minimum_required(VERSION 3.10)
+project(rv-mvp VERSION 1.0 LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-find_package(OpenCV REQUIRED)
+# 依赖
+find_package(OpenCV REQUIRED core imgproc highgui videoio calib3d)
+find_package(Eigen3 REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
-set(ARMOR_COMMON_SOURCES
-  src/io.cpp
-  src/color_selector.cpp
-  src/lightbar_detector.cpp
-  src/pairing.cpp
-  src/plate_corners.cpp
-  src/pnp_solver.cpp
-  src/visualizer.cpp
+# 包含路径
+include_directories(
+  ${PROJECT_SOURCE_DIR}
+  ${PROJECT_SOURCE_DIR}/include
+  ${EIGEN3_INCLUDE_DIR}
 )
 
-# 主程序
-add_executable(armor_vision
-  ${ARMOR_COMMON_SOURCES}
-  src/main.cpp
+# 源码
+add_executable(rv_mvp
+  app/main.cpp
+  src/armor.cpp
+  src/detector.cpp
+  src/solver.cpp
+  tools/math_tools.cpp
 )
-target_include_directories(armor_vision PRIVATE include)
-target_link_libraries(armor_vision PRIVATE ${OpenCV_LIBS} yaml-cpp)
 
-# Step2 主程序（逐帧处理）
-add_executable(step2_main
-  src/io.cpp
-  src/color_selector.cpp
-  src/lightbar_detector.cpp
-  tools/step2_main.cpp
+# 链接
+target_link_libraries(rv_mvp
+  ${OpenCV_LIBS}
+  yaml-cpp
 )
-target_include_directories(step2_main PRIVATE include)
-target_link_libraries(step2_main PRIVATE ${OpenCV_LIBS} yaml-cpp)
 
-# 独立调试程序 step3_main
-add_executable(step3_main
-  ${ARMOR_COMMON_SOURCES}
-  tools/step3_main.cpp
+# Windows/WSL 控制台 UTF-8（可选）
+if (MSVC)
+  target_compile_options(rv_mvp PRIVATE /utf-8)
+endif()
+
+# 运行目录（可选，把 configs/ 和 data/ 当作与可执行同级）
+set_target_properties(rv_mvp PROPERTIES
+  VS_DEBUGGER_WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
 )
-target_include_directories(step3_main PRIVATE include)
-target_link_libraries(step3_main PRIVATE ${OpenCV_LIBS} yaml-cpp)
-
-add_executable(step4_main
-  ${ARMOR_COMMON_SOURCES}
-  tools/step4_main.cpp
-)
-target_include_directories(step4_main PRIVATE include)
-target_link_libraries(step4_main PRIVATE ${OpenCV_LIBS} yaml-cpp)
-

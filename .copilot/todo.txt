@@ -1,2 +1,0 @@
-DONE:
-- Support looping playback by adding a reset capability to VideoReader and updating step2_main

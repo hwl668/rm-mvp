@@ -1,0 +1,15 @@
+# ======== Detector 参数（纯几何+阈值，与你的 detector.cpp 对齐） ========
+# 灰度二值阈值（0~255）
+threshold: 40
+
+# 单个灯条的几何约束
+max_angle_error: 15.0        # 度：灯条主方向与竖直的偏差上限
+min_lightbar_ratio: 1.5      # 长宽比下限（length/width）
+max_lightbar_ratio: 12.0     # 长宽比上限
+min_lightbar_length: 6.0     # 灯条最小长度（像素）
+
+# 两灯条配对后装甲的几何约束
+min_armor_ratio: 1.5       # 宽高比下限（灯条中点连线 / 最大灯条长）
+max_armor_ratio: 4.0         # 宽高比上限
+max_side_ratio: 1.1        # 两灯条长度比上限（长/短）
+max_rectangular_error: 20.0  # 度：灯条与中点连线夹角偏离90°的最大误差
